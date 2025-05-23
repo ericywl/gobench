@@ -180,12 +180,12 @@ func main() {
 	var buf bytes.Buffer
 	var esURL *url.URL
 	if esConfig.host != "" {
-		url, err := url.Parse(esConfig.host)
+		u, err := url.Parse(esConfig.host)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "invalid Elasticsearch URL %q: %s\n", esConfig.host, err)
 			os.Exit(2)
 		}
-		esURL = url
+		esURL = u
 		output = &buf
 		if *verboseFlag {
 			output = io.MultiWriter(output, os.Stdout)
@@ -283,9 +283,9 @@ func createMapping(cfg elasticsearchConfig) error {
 	if err != nil {
 		return err
 	}
-	if err := handleResponse(resp); err != nil {
-		esErr, ok := err.(*esError)
-		if ok && esErr.Type == exceptionResourceAlreadyExists {
+	if err = handleResponse(resp); err != nil {
+		var esErr *esError
+		if errors.As(err, &esErr) && esErr.Type == exceptionResourceAlreadyExists {
 			if *verboseFlag {
 				log.Printf("index %q already exists", cfg.index)
 			}
@@ -364,12 +364,15 @@ func encodeIndexOp(
 		doc[key] = value
 	}
 
+	includeTypDoc := false
 	// Versions of Elasticsearch >= 8.0.0 require no _type field
-	esVersion, err := getEsVersion(cfg.host, cfg.user, cfg.pass)
-	if err != nil {
-		log.Fatal(err)
+	if cfg.host != "" {
+		esVersion, err := getEsVersion(cfg.host, cfg.user, cfg.pass)
+		if err != nil {
+			log.Fatal(err)
+		}
+		includeTypDoc = esVersion.LT(semver.MustParse("8.0.0"))
 	}
-	includeTypDoc := esVersion.LT(semver.MustParse("8.0.0"))
 
 	type Index struct {
 		Index string `json:"_index"`
